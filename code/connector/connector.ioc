@@ -1,0 +1,54 @@
+#include "../common.h"
+
+// TODO MODYFIY!!!
+const uint32_t MY_NODE_ID = ID_W3; // or ID_W4
+const int MY_I2C_ADDR = W3_NR;     // or W4_NR
+const int CS_PIN_W0 = 10;
+
+volatile bool packetReady = false;
+DataFrame bufferFrame;
+
+void setup()
+{
+  Serial1.begin(UART_BAUD_RATE);
+  Wire.begin(MY_I2C_ADDR);
+  Wire.onReceive(receiveEventI2C);
+
+  SPI.begin();
+  pinMode(CS_PIN_W0, OUTPUT);
+  digitalWrite(CS_PIN_W0, HIGH);
+}
+
+void loop()
+{
+  if (Serial1.available() >= sizeof(DataFrame))
+  {
+    Serial1.readBytes((uint8_t *)&bufferFrame, sizeof(DataFrame));
+    processAndForward(bufferFrame);
+  }
+
+  if (packetReady)
+  {
+    packetReady = false;
+    processAndForward(bufferFrame);
+  }
+}
+
+void receiveEventI2C(int howMany)
+{
+  if (howMany >= sizeof(DataFrame))
+  {
+    Wire.readBytes((uint8_t *)&bufferFrame, sizeof(DataFrame));
+    packetReady = true;
+  }
+}
+
+void processAndForward(DataFrame f)
+{
+  f.pathMask |= MY_NODE_ID;
+  f.crc = calculateCRC((uint8_t *)&f, sizeof(DataFrame) - sizeof(uint16_t));
+
+  digitalWrite(CS_PIN_W0, LOW);
+  SPI.transfer((uint8_t *)&f, sizeof(DataFrame));
+  digitalWrite(CS_PIN_W0, HIGH);
+}

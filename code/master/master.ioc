@@ -1,0 +1,73 @@
+#include "../common.h"
+
+const uint32_t MY_NODE_ID = ID_W0;
+
+unsigned long lastSeen[6]; // 1-5 is for S1-S5, 
+
+void setup()
+{
+  Serial.begin(UART_BAUD_RATE);
+
+  pinMode(MISO, OUTPUT);
+  SPI.begin();
+}
+
+void loop()
+{
+  if (dataReceivedSPI())
+  {
+    DataFrame frame = readSPIFrame();
+
+    uint16_t calcCRC = calculateCRC((uint8_t *)&frame, sizeof(DataFrame) - sizeof(uint16_t));
+
+    if (calcCRC == frame.crc)
+    {
+      frame.pathMask |= MY_NODE_ID;
+
+      if (frame.senderID >= 1 && frame.senderID <= 5)
+      {
+        lastSeen[frame.senderID] = millis();
+      }
+
+      printDataToUSB(frame);
+    }
+    else
+    {
+      Serial.println("Błąd CRC ramki!");
+    }
+  }
+
+  checkSystemHealth();
+}
+
+void printDataToUSB(DataFrame f)
+{
+  Serial.print("Pomiar: ");
+  Serial.print(f.measurement);
+  Serial.print(" | Zrodlo: S");
+  Serial.print(f.senderID);
+  Serial.print(" | Sciezka: ");
+  Serial.println(f.pathMask, BIN);
+}
+
+void checkSystemHealth()
+{
+  unsigned long now = millis();
+  for (int i = 1; i <= 5; i++)
+  {
+    if (now - lastSeen[i] > 5000)
+    {
+      Serial.print("ALARM: Wezel S");
+      Serial.print(i);
+      Serial.println(" nie odpowiada (USZKODZONY lub brak trasy)!");
+    }
+  }
+}
+
+// TODO! implementacja
+bool dataReceivedSPI() { return false;  }
+DataFrame readSPIFrame()
+{
+  DataFrame f;
+  return f;
+}

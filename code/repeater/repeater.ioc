@@ -1,0 +1,39 @@
+#include "../common.h"
+
+// TODO MODYFIY!!!
+const uint32_t MY_NODE_ID = ID_W1; // or ID_W2
+
+void setup() {
+  Serial.begin(UART_BAUD_RATE); // Debug USB
+  Serial1.begin(UART_BAUD_RATE); // UART to connector
+  Wire.begin();        // I2C to connector
+  
+  pinMode(MISO, OUTPUT);
+  SPI.begin(); 
+}
+
+void loop() {
+  if (dataReceivedSPI()) { 
+    DataFrame frame = readSPIFrame();
+    frame.pathMask |= MY_NODE_ID;
+    frame.crc = calculateCRC((uint8_t*)&frame, sizeof(DataFrame) - sizeof(uint16_t));
+
+#if MY_NODE_ID == ID_W1 // W1 sends to W3 via UART and W4 via I2C
+    sendViaUART(frame);
+    sendViaI2C(frame, W4_NR);
+#else // W2 sends to W4 via UART and W4 via I2C
+      sendViaUART(frame);
+      sendViaI2C(frame, W3_NR);
+#endif
+  }
+}
+
+void sendViaUART(DataFrame &f) {
+  Serial1.write((uint8_t*)&f, sizeof(DataFrame));
+}
+
+void sendViaI2C(DataFrame &f, int address) {
+  Wire.beginTransmission(address);
+  Wire.write((uint8_t*)&f, sizeof(DataFrame));
+  Wire.endTransmission();
+}

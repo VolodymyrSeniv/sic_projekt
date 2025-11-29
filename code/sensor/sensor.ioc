@@ -1,0 +1,29 @@
+#include "../common.h"
+
+// TODO: MODYFIY!!!
+const uint32_t MY_NODE_ID = ID_S1;
+const int CS_PIN = 10;
+
+void setup()
+{
+    Serial.begin(UART_BAUD_RATE);
+    SPI.begin();
+    pinMode(CS_PIN, OUTPUT);
+    digitalWrite(CS_PIN, HIGH);
+}
+
+void loop()
+{
+    DataFrame frame;
+    frame.measurement = analogRead(A0);
+    frame.senderID = 1;
+    frame.pathMask = MY_NODE_ID;
+
+    frame.crc = calculateCRC((uint8_t *)&frame, sizeof(DataFrame) - sizeof(uint16_t));
+
+    digitalWrite(CS_PIN, LOW);
+    SPI.transfer((uint8_t *)&frame, sizeof(DataFrame));
+    digitalWrite(CS_PIN, HIGH);
+
+    delay(1000);
+}
