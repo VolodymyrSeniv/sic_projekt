@@ -2,81 +2,72 @@
 #include <Wire.h>
 #include <SPI.h>
 
-const uint32_t MY_NODE_ID = ID_W1;
-
-// Lista pinów CS dla poszczególnych sensorów
-const int SENSOR_CS_PINS[] = {4, 5}; 
+const uint32_t MY_NODE_ID = ID_W1; // lub ID_W2, zależnie od urządzenia
+const int SENSOR_CS_PINS[] = {4, 5};
 const int NUM_SENSORS = sizeof(SENSOR_CS_PINS) / sizeof(SENSOR_CS_PINS[0]);
 
-void setup() {
+const uint8_t TARGET_I2C_ADDR = (MY_NODE_ID == ID_W1) ? W4_NR : W3_NR;
+
+void setup()
+{
     Serial.begin(UART_BAUD_RATE);
-    Wire.begin();
-    
-    // Konfiguracja pinów CS
-    for(int i = 0; i < NUM_SENSORS; i++) {
-        pinMode(SENSOR_CS_PINS[i], OUTPUT);
-        digitalWrite(SENSOR_CS_PINS[i], HIGH); // Stan wysoki = nieaktywny
-    }
+    Wire.begin(); // Inicjalizacja I2C jako Master
 
-    // SPI start - domyślnie Master
     SPI.begin();
-}
 
-void loop() {
-    // Pętla odpytująca każdy sensor po kolei
-    for (int i = 0; i < NUM_SENSORS; i++) {
-        readFromSensor(SENSOR_CS_PINS[i]);
-        delay(100); // Krótka przerwa między odczytami sensorów
+    for (int i = 0; i < NUM_SENSORS; i++)
+    {
+        pinMode(SENSOR_CS_PINS[i], OUTPUT);
+        digitalWrite(SENSOR_CS_PINS[i], HIGH);
     }
-    
-    delay(1000); // Główny interwał pętli
 }
 
-void readFromSensor(int csPin) {
-    DataFrame frame;
-    // Czyścimy bufor ramki
+void loop()
+{
+    for (int i = 0; i < NUM_SENSORS; i++)
+    {
+        DataFrame frame;
+        if (readFromSensor(SENSOR_CS_PINS[i], frame))
+        {
+            processAndForward(frame);
+        }
+        delay(50);
+    }
+    delay(1000);
+}
+
+bool readFromSensor(int csPin, DataFrame &frame)
+{
     memset(&frame, 0, sizeof(DataFrame));
 
     SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
-    
-    // Aktywacja konkretnego Sensora
     digitalWrite(csPin, LOW);
-    
-    // Transfer - wysyłamy 0x00, odbieramy dane od Slave'a
-    // Musimy wiedzieć ile bajtów odebrać
-    uint8_t* pFrame = (uint8_t*)&frame;
-    for (size_t k = 0; k < sizeof(DataFrame); k++) {
-        pFrame[k] = SPI.transfer(0x00); // Dummy byte to generate clock
+
+    uint8_t *pFrame = (uint8_t *)&frame;
+    for (size_t k = 0; k < sizeof(DataFrame); k++)
+    {
+        pFrame[k] = SPI.transfer(0x00); // Clock generation
     }
-    
-    // Dezaktywacja Sensora
+
     digitalWrite(csPin, HIGH);
-    
     SPI.endTransaction();
 
-    // Weryfikacja danych (np. czy ID nie jest puste lub CRC się zgadza)
-    // Uwaga: Slave może zwrócić same 0 lub 0xFF jeśli nie był gotowy
-    if (frame.senderID != 0 && frame.senderID != 0xFFFFFFFF) {
-        processFrame(frame);
+    if (frame.senderID == 0 || frame.senderID == 0xFFFFFFFF)
+    {
+        return false;
     }
+    return true;
 }
 
-void processFrame(DataFrame &frame) {
-    // Logika routingu i przekazywania (z twojego oryginalnego kodu)
+void processAndForward(DataFrame &frame)
+{
     frame.pathMask |= MY_NODE_ID;
-    
-    // Przelicz CRC jeśli modyfikujesz ramkę
-    // frame.crc = calculateCRC(...) 
 
-    Serial.print("Odebrano od ID: ");
-    Serial.println(frame.senderID);
-    Serial.print("Pomiar: ");
-    Serial.println(frame.measurement);
+    frame.crc = calculateCRC((uint8_t *)&frame, sizeof(DataFrame) - sizeof(uint16_t));
 
-    // Przekazanie dalej po I2C lub Serial (zgodnie z )
-    if (MY_NODE_ID == ID_W1) {
-       Wire.beginTransmission(W4_NR);
-       Wire.write((uint8_t*)&frame, sizeof(DataFrame));
-       Wire.endTransmission();
-    }
+    Serial.write((uint8_t *)&frame, sizeof(DataFrame));
+
+    Wire.beginTransmission(TARGET_I2C_ADDR);
+    Wire.write((uint8_t *)&frame, sizeof(DataFrame));
+    Wire.endTransmission();
 }
